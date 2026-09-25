@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "omp-plugin-coop",
+  "owner": {
+    "name": "thekujin"
+  },
+  "metadata": {
+    "description": "Pair two omp coding-agent sessions into an automated handoff loop",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "coop",
+      "source": "./",
+      "description": "Cross-session handoff loop for omp: /coop start + /coop join pair two interactive sessions; each writes markdown handoff files and the watcher wakes the idle peer",
+      "category": "development",
+      "keywords": ["omp", "agents", "handoff", "orchestration", "pairing"]
+    }
+  ]
+}
