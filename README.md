@@ -1,6 +1,6 @@
 # omp-plugin-coop
 
-Pair two [omp](https://github.com/oh-my-pi/omp) coding-agent sessions into an automated handoff loop.
+Pair two [omp](https://github.com/can1357/oh-my-pi) coding-agent sessions into an automated handoff loop.
 
 Two interactive omp instances (for example: one building a library, one integrating and testing it) exchange work items through markdown handoff files. When a session finishes its work, it writes its handoff; the peer's watcher notices the file and **wakes the idle session with the handoff as its next prompt** — no supervisor scripts, no headless runs, and approval prompts stay visible in the TUI.
 
