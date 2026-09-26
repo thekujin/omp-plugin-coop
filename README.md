@@ -46,7 +46,7 @@ ln -s "$PWD/src/coop.ts" ~/.omp/agent/extensions/coop.ts
 **B. Marketplace:** omp reads the same catalog format as Claude Code plugin registries:
 
 ```
-/marketplace add <you>/omp-plugin-coop
+/marketplace add thekujin/omp-plugin-coop
 /marketplace install coop@omp-plugin-coop
 ```
 
