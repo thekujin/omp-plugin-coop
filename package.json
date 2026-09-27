@@ -1,6 +1,6 @@
 {
   "name": "omp-plugin-coop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pair two omp coding-agent sessions into an automated handoff loop: /coop start + /coop join, markdown handoff files, idle-session wake",
   "type": "module",
   "omp": {

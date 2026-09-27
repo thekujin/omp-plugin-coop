@@ -18,7 +18,7 @@ Two interactive omp instances (for example: one building a library, one integrat
 - `/coop start` generates a **pairing id**: 8 characters, 4 for each side (`abcdefgh` → you are `abcd`, the peer is `efgh`). It prints the exact command to run in the other session: `/coop join abcdefgh`.
 - Each side watches one file in the sync dir and owns the opposite one:
   - `<me>2<peer>.md` — **outgoing**: write your handoff here when done (write to the path with a `.tmp` suffix, then `mv` it over the final name so the peer sees it atomically).
-  - `<peer>2<me>.md` — **incoming**: the watcher polls this file; when it has content and your session is idle, it is consumed and delivered as an agent-attributed prompt.
+  - `<peer>2<me>.md` — **incoming**: the watcher polls this file; when it has content, your session is idle with an empty prompt queue, and nothing is still running in the background (no subagents or async jobs), it is consumed and delivered as an agent-attributed prompt.
 - A 5-second tick checks the incoming file. It never interrupts a running turn and never double-delivers: the file is removed before delivery, and if delivery fails the content is restored.
 - The injected handoff message carries the protocol footer, so the peer learns the reply convention in-session.
 - On pairing, the extension queues a **protocol briefing** into the paired session: injected at the next step boundary if the agent is mid-task, or with its next prompt if idle. That is what teaches the agent to write its outgoing handoff as the final action of its current work — no handoff file exists until an agent actually finishes something.
@@ -56,7 +56,7 @@ Extension modules load at session start — `/reload-plugins` does not pick them
 
 ## Handoff protocol
 
-A handoff is free-form markdown — the work order for the peer. For a library/integration pair, a handoff typically names the branch or commit to pull, the GitHub issue ids to fix or verify, and the acceptance checks. The only convention the plugin enforces is delivery: write the file last, atomically:
+A handoff is free-form markdown — the work order for the peer. For a library/integration pair, a handoff typically names the branch or commit to pull, the GitHub issue ids to fix or verify, and the acceptance checks. Two conventions are enforced — timing and delivery: write the handoff only once everything is completely finished (no subagents or background jobs still running) and only when something actually requires the peer's attention — otherwise leave the file absent or empty; when you do write it, write the file last, atomically:
 
 ```sh
 printf '...' > ~/.omp/plugin-coop/abcd2efgh.md.tmp && mv ~/.omp/plugin-coop/abcd2efgh.md.tmp ~/.omp/plugin-coop/abcd2efgh.md

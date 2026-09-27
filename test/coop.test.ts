@@ -47,6 +47,7 @@ interface SessionContextStub {
   sessionManager: { getBranch: () => readonly unknown[] };
   isIdle: () => boolean;
   hasPendingMessages: () => boolean;
+  getAsyncJobSnapshot: () => { running: unknown[] };
   setInterval: (fn: () => void, ms: number) => unknown; // mock: captures the callback, never schedules
 }
 
@@ -77,6 +78,7 @@ let notifies: NotifyCall[] = [];
 let failNextSend = false;
 let idle = true;
 let pendingMessages = false;
+let runningJobs = 0;
 let tickCb: (() => void) | null = null;
 let branchEntries: readonly unknown[] = [];
 
@@ -110,6 +112,7 @@ const sessionCtx: SessionContextStub = {
   sessionManager: { getBranch: () => branchEntries },
   isIdle: () => idle,
   hasPendingMessages: () => pendingMessages,
+  getAsyncJobSnapshot: () => ({ running: Array.from({ length: runningJobs }, () => ({})) }),
   setInterval(fn) {
     tickCb = fn;
     return 1;
@@ -173,6 +176,7 @@ beforeEach(() => {
   failNextSend = false;
   idle = true;
   pendingMessages = false;
+  runningJobs = 0;
 });
 
 describe("commands before pairing", () => {
@@ -224,6 +228,13 @@ describe("pairing", () => {
     assert.equal(briefings[0].message.customType, "coop.briefing");
     assert.match(briefings[0].message.content, /FINAL action/);
     assert.ok(briefings[0].message.content.includes(outgoingPath(st.me, st.peer)));
+    assert.match(briefings[0].message.content, /no subagents/);
+    assert.match(briefings[0].message.content, /peer's attention/);
+    assert.ok(
+      briefings[0].message.content.includes(`/coop join ${st.me}${st.peer}`),
+      "start briefing should carry the peer's join command",
+    );
+    assert.match(briefings[0].message.content, /PAIR THE PEER/);
     assert.equal(briefings[0].options.deliverAs, "nextTurn"); // paired while idle
   });
 
@@ -242,6 +253,8 @@ describe("pairing", () => {
     assert.equal(existsSync(join(testDir, "efgh2abcd.md")), false, "outgoing cleared");
     assert.equal(existsSync(join(testDir, "abcd2efgh.md")), true, "incoming kept");
     assert.ok(notifies.some((n) => n.message.includes("joined")));
+    const jb = briefings.at(-1);
+    assert.ok(jb && !jb.message.content.includes("/coop join"), "join-side briefing must not carry a join command");
   });
 
   test("join uppercases are normalized", async () => {
@@ -294,6 +307,7 @@ describe("watcher tick", () => {
     assert.match(sent[0].text, /please do X/);
     assert.match(sent[0].text, /coop protocol/);
     assert.match(sent[0].text, /FINAL action/);
+    assert.match(sent[0].text, /completely finished/);
     assert.ok(sent[0].text.includes(outgoingPath(st.me, st.peer)));
     assert.equal(sent[0].options.attribution, "agent");
     assert.equal(existsSync(inboxPath(st.peer, st.me)), false, "handoff consumed");
@@ -313,6 +327,19 @@ describe("watcher tick", () => {
     assert.equal(sent.length, 0);
     assert.equal(existsSync(inbox), true);
     pendingMessages = false;
+    tickCb?.();
+    assert.equal(sent.length, 1);
+    assert.equal(existsSync(inbox), false);
+  });
+  test("defers while subagents or background jobs still run", async () => {
+    const st = await pairingAfter("start");
+    const inbox = inboxPath(st.peer, st.me);
+    writeFileSync(inbox, "work item");
+    runningJobs = 2;
+    tickCb?.();
+    assert.equal(sent.length, 0);
+    assert.equal(existsSync(inbox), true, "held while background jobs run");
+    runningJobs = 0;
     tickCb?.();
     assert.equal(sent.length, 1);
     assert.equal(existsSync(inbox), false);

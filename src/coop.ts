@@ -30,6 +30,8 @@ interface CoopState {
 interface IdleView {
   isIdle(): boolean;
   hasPendingMessages(): boolean;
+  /** True while any background job (subagent, async bash) is queued or running. */
+  hasRunningJobs(): boolean;
 }
 
 const DIR = process.env.COOP_DIR ?? join(homedir(), ".omp", "plugin-coop");
@@ -76,14 +78,18 @@ function tick(pi: ExtensionAPI): void {
     const content = readFileSync(inbox, "utf8").trim();
     if (!content) return; // empty placeholder: not a handoff yet
     // Never interrupt a running turn or steal a queued one; retry on the next tick.
-    if (!watchCtx.isIdle() || watchCtx.hasPendingMessages()) return;
+    // A handoff also waits until every background job (subagents, async bash) is done:
+    // it is delivered only once everything is completely finished.
+    if (!watchCtx.isIdle() || watchCtx.hasPendingMessages() || watchCtx.hasRunningJobs()) return;
     rmSync(inbox); // consume first so a later tick cannot re-deliver the same handoff
     const footer =
-      `\n\n---\n(coop protocol: your FINAL action must be writing your handoff for ` +
-      `${state.peer} to ${coopFile(state.me, state.peer)} — write to that path with a ` +
-      `.tmp suffix, then mv it over the final name so the peer sees it atomically. ` +
-      `The handoff tells the peer what to do next. Leave the file absent or empty ` +
-      `while you work. /coop pause, /coop resume, /coop drop.)`;
+      `\n\n---\n(coop protocol: once everything is completely finished — no subagents or ` +
+      `background jobs still running — and there is something that requires ${state.peer}'s ` +
+      `attention, your FINAL action must be writing your handoff for ${state.peer} to ` +
+      `${coopFile(state.me, state.peer)} — write to that path with a .tmp suffix, then mv it ` +
+      `over the final name so the peer sees it atomically. The handoff tells the peer what ` +
+      `to do next. If nothing requires the peer's attention, leave the file absent or empty. ` +
+      `/coop pause, /coop resume, /coop drop.)`;
     try {
       pi.sendUserMessage(`coop handoff from ${state.peer}:\n\n${content}${footer}`, {
         attribution: "agent",
@@ -119,7 +125,14 @@ export default function (pi: ExtensionAPI): void {
     }
     if (!watchStarted) {
       watchStarted = true;
-      watchCtx = ctx;
+      watchCtx = {
+        isIdle: () => ctx.isIdle(),
+        hasPendingMessages: () => ctx.hasPendingMessages(),
+        hasRunningJobs: () =>
+          typeof ctx.getAsyncJobSnapshot === "function"
+            ? (ctx.getAsyncJobSnapshot()?.running?.length ?? 0) > 0
+            : false, // host lacks the API: fail open, delivery stays possible
+      };
       ctx.setInterval(() => tick(pi), POLL_MS);
     }
     pi.logger?.debug?.(
@@ -153,7 +166,7 @@ export default function (pi: ExtensionAPI): void {
     },
     handler: async (args, ctx) => {
       const [cmd, id] = args.trim().split(/\s+/);
-      const pair = (me: string, peer: string, note: string) => {
+      const pair = (me: string, peer: string, note: string, joinCmd?: string) => {
         mkdirSync(DIR, { recursive: true });
         state = { me, peer, paused: false, active: true };
         pi.appendEntry(ENTRY_TYPE, state);
@@ -165,12 +178,17 @@ export default function (pi: ExtensionAPI): void {
           {
             customType: "coop.briefing",
             content:
-              `coop briefing: you are paired with peer ${peer}. When you finish your current ` +
-              `work, your FINAL action must be writing your handoff message for ${peer} to ` +
-              `${coopFile(me, peer)}: write to that path with a .tmp suffix, then mv it over ` +
-              `the final name. The handoff tells the peer what to do next (branch or commit ` +
-              `to pull, issue ids, checks to run). Leave the file absent or empty until you ` +
-              `are done. /coop pause, /coop resume and /coop drop control the loop.`,
+              `coop briefing: you are paired with peer ${peer}.` +
+              (joinCmd
+                ? `\n\n── PAIR THE PEER — in the other agent's session run:\n\n    /coop join ${joinCmd}\n`
+                : "") +
+              `\n\nWhen everything is completely finished — no subagents or background jobs ` +
+              `still running — and there is something that requires ${peer}'s attention, your ` +
+              `FINAL action must be writing your handoff for ${peer} to ${coopFile(me, peer)}: ` +
+              `write to that path with a .tmp suffix, then mv it over the final name. The ` +
+              `handoff tells the peer what to do next (branch or commit to pull, issue ids, ` +
+              `checks to run). If nothing requires the peer's attention, leave the file absent ` +
+              `or empty. /coop pause, /coop resume and /coop drop control the loop.`,
             display: true,
             attribution: "agent",
           },
@@ -183,7 +201,7 @@ export default function (pi: ExtensionAPI): void {
         const newId = genId();
         const me = newId.slice(0, HALF);
         const peer = newId.slice(HALF);
-        pair(me, peer, `coop started — you are ${me}, peer is ${peer}. In the other agent run: /coop join ${newId}`);
+        pair(me, peer, `coop started — you are ${me}, peer is ${peer}. In the other agent run: /coop join ${newId}`, newId);
         return;
       }
       if (cmd === "join") {
